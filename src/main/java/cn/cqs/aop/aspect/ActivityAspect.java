@@ -1,6 +1,8 @@
 package cn.cqs.aop.aspect;
 
 import android.app.Activity;
+import android.app.Application;
+import android.os.Bundle;
 import android.util.Log;
 
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -20,20 +22,18 @@ import cn.cqs.aop.navigation.AnimationUtils;
 @Aspect
 public class ActivityAspect {
     private String TAG = this.getClass().getSimpleName();
-    private static Stack<Activity> activityStack;
+    private static Stack<Activity> activityStack = new Stack<Activity>();
+    private Application application;
     /**
      * 添加Activity到堆栈
      */
-    public void addActivity(Activity activity) {
-        if (activityStack == null) {
-            activityStack = new Stack<Activity>();
-        }
+    private void addActivity(Activity activity) {
         activityStack.add(activity);
     }
     /**
      * 移除指定的Activity
      */
-    public void removeActivity(Activity activity) {
+    private void removeActivity(Activity activity) {
         if (activity != null) {
             activityStack.remove(activity);
         }
@@ -51,6 +51,11 @@ public class ActivityAspect {
         }
         return 0;
     }
+
+    public static Stack<Activity> getActivityStack() {
+        return activityStack;
+    }
+
     /**
      * 获取当前Activity（堆栈中最后一个压入的）
      */
@@ -64,49 +69,87 @@ public class ActivityAspect {
         return activity;
     }
     /**
+     * 针对Application 类的 onCreate 方法
+     */
+    @Pointcut("execution(* android.app.Application.onCreate(..))")
+    public void applicationOnCreatePointcut() {}
+    /**
      * 针对所有继承 Activity 类的 onCreate 方法
      */
-    @Pointcut("execution(* android.app.Activity+.onCreate(..))")
+//    @Pointcut("execution(* android.app.Activity+.onCreate(..))")
+//    public void activityOnCreatePointcut() {}
+    @Pointcut("execution(* android.app.Activity.onCreate(..))")
     public void activityOnCreatePointcut() {}
+    @Pointcut("execution(* android.app.Activity.finish(..))")
+    public void activityFinishPointcut() {}
+    @Pointcut("execution(* android.app.Activity.onDestroy(..))")
+    public void activityOnDestroyPointcut() {}
+    /**
+     * Application OnCreate
+     */
+    @Around("applicationOnCreatePointcut()")
+    public void aroundJoinApplicationOnCreate(final ProceedingJoinPoint joinPoint) throws Throwable {
+        long startTimeMillis = System.currentTimeMillis();
+        joinPoint.proceed();
+        log(joinPoint,startTimeMillis);
+        if (application == null){
+            application = (Application) joinPoint.getTarget();
+            activityStack.clear();
+            application.registerActivityLifecycleCallbacks(new Application.ActivityLifecycleCallbacks() {
+                @Override
+                public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+                    addActivity(activity);
+                }
 
-    @Pointcut("execution(* android.app.Activity+.finish(..))")
-    public void activityFinishPointcut() {
-    }
-    @Pointcut("execution(* android.app.Activity+.onDestroy(..))")
-    public void activityOnDestroyPointcut() {
+                @Override
+                public void onActivityStarted(Activity activity) {
+
+                }
+
+                @Override
+                public void onActivityResumed(Activity activity) {
+
+                }
+
+                @Override
+                public void onActivityPaused(Activity activity) {
+
+                }
+
+                @Override
+                public void onActivityStopped(Activity activity) {
+
+                }
+
+                @Override
+                public void onActivitySaveInstanceState(Activity activity, Bundle outState) {
+
+                }
+
+                @Override
+                public void onActivityDestroyed(Activity activity) {
+                    removeActivity(activity);
+                }
+            });
+        }
     }
     /**
      * activity OnCreate
      */
     @Around("activityOnCreatePointcut()")
     public void aroundJoinActivityOnCreate(final ProceedingJoinPoint joinPoint) throws Throwable {
-        Activity activity = (Activity) joinPoint.getTarget();
-        Activity currentActivity = getCurrentActivity();
-        if (currentActivity == null && !activity.equals(currentActivity)){
-            addActivity(activity);
-            Log.d(TAG,activity.getClass().getName());
-        }
         long startTimeMillis = System.currentTimeMillis();
         joinPoint.proceed();
-        long duration = System.currentTimeMillis() - startTimeMillis;
-        MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
-        SourceLocation location = joinPoint.getSourceLocation();
-        String message = String.format("%s(%s:%s) [%sms]", methodSignature.getMethod().getName(), location.getFileName(), location.getLine(), duration);
-        Log.d(TAG,message);
+        log(joinPoint,startTimeMillis);
     }
     /**
      * activity onDestroy
      */
     @Around("activityOnDestroyPointcut()")
     public void aroundJoinActivityOnDestroy(final ProceedingJoinPoint joinPoint) throws Throwable {
-        MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
-        String className = joinPoint.getThis().getClass().getSimpleName();
-        Log.d(TAG, "class:" + className+" method:" + methodSignature.getName());
-        Activity activity = (Activity) joinPoint.getTarget();
-        if (activity != null){
-            removeActivity(activity);
-        }
+        long startTimeMillis = System.currentTimeMillis();
         joinPoint.proceed();
+        log(joinPoint,startTimeMillis);
     }
     /**
      * 在MainActivity的所有生命周期的方法中打印log
@@ -115,10 +158,9 @@ public class ActivityAspect {
      */
     @Around("activityFinishPointcut()")
     public void aroundJoinActivityFinish(ProceedingJoinPoint joinPoint) throws Throwable {
-        MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
-        String className = joinPoint.getThis().getClass().getSimpleName();
-        Log.d(TAG, "class:" + className+" method:" + methodSignature.getName());
+        long startTimeMillis = System.currentTimeMillis();
         joinPoint.proceed();
+        log(joinPoint,startTimeMillis);
         //在Finish后插入退出动画,当前栈若只有一个Activity默认去掉之前的动画直接退出应用
         Activity activity = (Activity) joinPoint.getTarget();
         if (activity != null && getActivityStackSize() > 1){
@@ -127,6 +169,18 @@ public class ActivityAspect {
                 activity.overridePendingTransition(animation[0],animation[1]);
             }
         }
+    }
+
+    /**
+     * 日志输出
+     * @param joinPoint
+     */
+    private void log(ProceedingJoinPoint joinPoint,long startTimeMillis){
+        long duration = System.currentTimeMillis() - startTimeMillis;
+        MethodSignature methodSignature = (MethodSignature) joinPoint.getSignature();
+        SourceLocation location = joinPoint.getSourceLocation();
+        String message = String.format("%s(%s:%s) [%sms]", methodSignature.getMethod().getName(), location.getFileName(), location.getLine(), duration);
+        Log.d(TAG,message);
     }
 }
 
