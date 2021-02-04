@@ -9,7 +9,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 
-import cn.cqs.aop.annotation.Animation;
 import cn.cqs.aop.annotation.Extra;
 import cn.cqs.aop.annotation.Navigate;
 
@@ -20,7 +19,7 @@ class ProtocolMethod {
     private int[] exitAnim;
     private boolean start;
 
-    private ProtocolMethod(Class<? extends Activity> target, ExtraHandler[] extraHandlers, boolean start, int[] enterAnim, int[] exitAnim) {
+    private ProtocolMethod(Class<? extends Activity> target, ExtraHandler[] extraHandlers, boolean start) {
         this.target = target;
         this.extraHandlers = extraHandlers;
         this.start = start;
@@ -41,16 +40,8 @@ class ProtocolMethod {
         } catch (Exception e) {
             Log.e("Navigator", "put extra error ", e);
         }
-        //hookFinishEvent(target);//动态代理
         if (start) {
             from.startActivity(intent);
-            if (from instanceof Activity && enterAnim != null){
-               Activity activity = (Activity) from;
-               activity.overridePendingTransition(enterAnim[0],enterAnim[1]);
-            }
-            if (exitAnim != null){
-                AnimationUtils.put(target,exitAnim);
-            }
             return null;
         } else {
             return intent;
@@ -73,15 +64,9 @@ class ProtocolMethod {
 
         ProtocolMethod build() {
             Class<? extends Activity> target = null;
-            int[] enterAnim = null;
-            int[] exitAnim = null;
             for (Annotation annotation : methodAnnotations) {
                 if (annotation instanceof Navigate) {
                     target = ((Navigate) annotation).value();
-                }
-                if (annotation instanceof Animation){
-                    enterAnim = ((Animation) annotation).enterAnim();
-                    exitAnim = ((Animation) annotation).exitAnim();
                 }
             }
             if (target == null) {
@@ -105,7 +90,7 @@ class ProtocolMethod {
                 throw methodError("The returnType must be Intent");
             }
 
-            return new ProtocolMethod(target, paramHandlers, start,enterAnim,exitAnim);
+            return new ProtocolMethod(target, paramHandlers, start);
         }
 
         private void checkFirstParam() {

@@ -6,11 +6,14 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 页面跳转动画
+ * module application 生命周期感知
  */
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
-public @interface Animation {
-    int[] enterAnim();
-    int[] exitAnim();
+@Target(ElementType.TYPE)
+public @interface AppLifecycle {
+    /**
+     * 优先级
+     * @return
+     */
+    int priority();
 }

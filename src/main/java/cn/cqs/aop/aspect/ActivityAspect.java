@@ -14,16 +14,46 @@ import org.aspectj.lang.reflect.SourceLocation;
 
 import java.util.Stack;
 
-import cn.cqs.aop.navigation.AnimationUtils;
-
 /**
  * 功能：拦截Activity finish方法(这里用于执行销毁动画)
  */
 @Aspect
 public class ActivityAspect {
-    private String TAG = this.getClass().getSimpleName();
+    private static final String TAG = "ActivityAspect";
     private static Stack<Activity> activityStack = new Stack<Activity>();
     private Application application;
+    /**
+     * 设置全局Activity需要执行的跳转动画
+     */
+    private static int[] activityEnterAnimation;
+    private static int[] activityExitAnimation;
+    /**
+     * 设置默认的页面跳转动画
+     * @param enterAnim
+     * @param exitAnim
+     */
+    public static void setDefaultAnimation(int[] enterAnim, int[] exitAnim){
+        activityEnterAnimation = enterAnim;
+        activityExitAnimation = exitAnim;
+    }
+    private static int[] getDefaultEnterAnimation(){
+        return activityEnterAnimation;
+    }
+    private static int[] getDefaultExitAnimation(){
+        return activityExitAnimation;
+    }
+    /**
+     * 当前页面的需要改写的动画
+     */
+    private static int[] enterAnimation = null;
+    private static int[] exitAnimation = null;
+    public static void setEnterAnimation(int[] enterAnimation) {
+        ActivityAspect.enterAnimation = enterAnimation;
+    }
+    public static void setExitAnimation(int[] exitAnimation) {
+        ActivityAspect.exitAnimation = exitAnimation;
+    }
+
     /**
      * 添加Activity到堆栈
      */
@@ -84,6 +114,10 @@ public class ActivityAspect {
     public void activityFinishPointcut() {}
     @Pointcut("execution(* android.app.Activity.onDestroy(..))")
     public void activityOnDestroyPointcut() {}
+    @Pointcut("execution(* android.app.Activity.startActivityForResult(..))")
+    public void startActivityPointcut() {}
+    @Pointcut("execution(* android.app.Activity.onBackPressed(..))")
+    public void onBackPressedPointcut() {}
     /**
      * Application OnCreate
      */
@@ -139,20 +173,55 @@ public class ActivityAspect {
     @Around("activityOnCreatePointcut()")
     public void aroundJoinActivityOnCreate(final ProceedingJoinPoint joinPoint) throws Throwable {
         long startTimeMillis = System.currentTimeMillis();
+        enterAnimation = exitAnimation = null;
         joinPoint.proceed();
         log(joinPoint,startTimeMillis);
     }
+
     /**
-     * activity onDestroy
+     * startActivity
+     * @param joinPoint
+     * @throws Throwable
      */
-    @Around("activityOnDestroyPointcut()")
-    public void aroundJoinActivityOnDestroy(final ProceedingJoinPoint joinPoint) throws Throwable {
+    @Around("startActivityPointcut()")
+    public void aroundJoinStartActivity(final ProceedingJoinPoint joinPoint) throws Throwable {
         long startTimeMillis = System.currentTimeMillis();
         joinPoint.proceed();
         log(joinPoint,startTimeMillis);
+        Activity activity = (Activity) joinPoint.getTarget();
+        if (enterAnimation != null && enterAnimation.length>1){
+            activity.overridePendingTransition(enterAnimation[0],enterAnimation[1]);
+        } else {
+            int[] enterAnim = getDefaultEnterAnimation();
+            if (enterAnim != null && enterAnim.length>1) {
+                activity.overridePendingTransition(enterAnim[0],enterAnim[1]);
+            }
+        }
     }
     /**
-     * 在MainActivity的所有生命周期的方法中打印log
+     * onBackPressed
+     * @param joinPoint
+     * @throws Throwable
+     */
+    @Around("onBackPressedPointcut()")
+    public void aroundJoinOnBackPressed(final ProceedingJoinPoint joinPoint) throws Throwable {
+        long startTimeMillis = System.currentTimeMillis();
+        joinPoint.proceed();
+        log(joinPoint,startTimeMillis);
+        Activity activity = (Activity) joinPoint.getTarget();
+        if (activity != null && getActivityStackSize() > 1){
+            if (exitAnimation != null && exitAnimation.length > 1){
+                activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
+            } else {
+                int[] exitAnim = getDefaultExitAnimation();
+                if (exitAnim != null && exitAnim.length>1) {
+                    activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+                }
+            }
+        }
+    }
+    /**
+     * Finish
      * @param joinPoint
      * @throws Throwable
      */
@@ -164,11 +233,25 @@ public class ActivityAspect {
         //在Finish后插入退出动画,当前栈若只有一个Activity默认去掉之前的动画直接退出应用
         Activity activity = (Activity) joinPoint.getTarget();
         if (activity != null && getActivityStackSize() > 1){
-            int[] animation = AnimationUtils.getAnimation(activity.getClass());
-            if (animation != null){
-                activity.overridePendingTransition(animation[0],animation[1]);
+            if (exitAnimation != null && exitAnimation.length > 1){
+                activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
+            } else {
+                int[] exitAnim = getDefaultExitAnimation();
+                if (exitAnim != null && exitAnim.length>1) {
+                    activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+                }
             }
         }
+    }
+
+    /**
+     * activity onDestroy
+     */
+    @Around("activityOnDestroyPointcut()")
+    public void aroundJoinActivityOnDestroy(final ProceedingJoinPoint joinPoint) throws Throwable {
+        long startTimeMillis = System.currentTimeMillis();
+        joinPoint.proceed();
+        log(joinPoint,startTimeMillis);
     }
 
     /**
