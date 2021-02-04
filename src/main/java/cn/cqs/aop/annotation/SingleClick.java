@@ -8,8 +8,12 @@ import java.lang.annotation.Target;
 /**
  * 防止View被连续点击
  */
-@Target({ElementType.METHOD })
+@Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface SingleClick {
-    int value() default 500;
+    int value() default 2000;
+
+    int[] except() default {};
+
+    String[] exceptIdName() default {};
 }

@@ -1,5 +1,6 @@
 package cn.cqs.aop.aspect;
 
+import android.content.res.Resources;
 import android.util.Log;
 import android.view.View;
 
@@ -19,110 +20,96 @@ import cn.cqs.aop.annotation.SingleClick;
  */
 @Aspect
 public class SingleClickAspect {
-    private final String TAG = this.getClass().getSimpleName();
-    private static final int CHECK_FOR_DEFAULT_TIME = 500;
+    private final String TAG = "SingleClickAspect";
+    private static long mLastClickTime;
     // View#setOnClickListener 针对所有点击事件
-    private static final String POINTCUT_ON_VIEW_CLICK = "execution(* android.view.View.OnClickListener.onClick(..))";
+    //private static final String POINTCUT_ON_VIEW_CLICK = "execution(* android.view.View.OnClickListener.onClick(..))";
     private static final String POINTCUT_ON_ANNOTATION = "execution(@cn.cqs.aop.annotation.SingleClick * *(..))";
 
     @Pointcut(POINTCUT_ON_ANNOTATION)
-    public void onAnnotationClick(){
+    public void singleClickPointcut(){
     }
-
-    @Around("onAnnotationClick()")
-    public void processJoinPoint(ProceedingJoinPoint joinPoint) throws Throwable {
-        Log.d(TAG, "-----method is click--- ");
+    @Around("singleClickPointcut()")
+    public void aroundJoinPoint(final ProceedingJoinPoint joinPoint) throws Throwable {
         try {
-            Signature signature = joinPoint.getSignature();
-            if (!(signature instanceof MethodSignature)){
-                Log.d(TAG, "method is no MethodSignature, so proceed it");
-                joinPoint.proceed();
-                return;
+            MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+            Method method = signature.getMethod();
+            //检查方法是否有注解
+            boolean hasAnnotation = method != null && method.isAnnotationPresent(SingleClick.class);
+            //计算点击间隔，没有自定义注解 默认2000，有注解按注解参数来
+            int interval = 2000;
+            if (hasAnnotation) {
+                SingleClick annotation = method.getAnnotation(SingleClick.class);
+                interval = annotation.value();
             }
-            MethodSignature methodSignature = (MethodSignature) signature;
-            Method method = methodSignature.getMethod();
-            boolean isHasLimitAnnotation = method.isAnnotationPresent(SingleClick.class);
-            String methodName = method.getName();
-            int intervalTime = CHECK_FOR_DEFAULT_TIME;
-            if (isHasLimitAnnotation){
-                SingleClick clickLimit = method.getAnnotation(SingleClick.class);
-                int limitTime = clickLimit.value();
-                // not limit click
-                if (limitTime <= 0){
-                    Log.d(TAG, "method: " + methodName + " limitTime is zero, so proceed it");
+            //获取被点击的view对象
+            Object[] args = joinPoint.getArgs();
+            View view = findViewInMethodArgs(args);
+            if (view != null) {
+                int id = view.getId();
+                //注解排除某个控件不防止双击
+                if (hasAnnotation) {
+                    SingleClick annotation = method.getAnnotation(SingleClick.class);
+                    //按id值排除不防止双击的按钮点击
+                    int[] except = annotation.except();
+                    for (int i : except) {
+                        if (i == id) {
+                            mLastClickTime = System.currentTimeMillis();
+                            joinPoint.proceed();
+                            return;
+                        }
+                    }
+                    //按id名排除不防止双击的按钮点击（非app模块）
+                    String[] idName = annotation.exceptIdName();
+                    Resources resources = view.getResources();
+                    for (String name : idName) {
+                        int resId = resources.getIdentifier(name, "id", view.getContext().getPackageName());
+                        if (resId == id) {
+                            mLastClickTime = System.currentTimeMillis();
+                            joinPoint.proceed();
+                            return;
+                        }
+                    }
+                }
+                if (canClick(interval)) {
+                    mLastClickTime = System.currentTimeMillis();
                     joinPoint.proceed();
                     return;
                 }
-                intervalTime = limitTime;
-                Log.d(TAG, "methodName " +  methodName + " intervalTime is " + intervalTime);
             }
-            Object[] args = joinPoint.getArgs();
-            View view = getViewFromArgs(args);
-            if (view == null) {
-                Log.d(TAG, "view is null, proceed");
+
+            //检测间隔时间是否达到预设时间并且线程空闲
+            if (canClick(interval)) {
+                mLastClickTime = System.currentTimeMillis();
                 joinPoint.proceed();
-                return;
             }
-            Object viewTimeTag =  view.getTag(R.id.single_click_tag);
-            // first click viewTimeTag is null.
-            if (viewTimeTag == null){
-                Log.d(TAG, "lastClickTime is zero , proceed");
-                proceedAnSetTimeTag(joinPoint, view);
-                return;
-            }
-
-            long lastClickTime = (long) viewTimeTag;
-            if (lastClickTime <= 0){
-                Log.d(TAG, "lastClickTime is zero , proceed");
-                proceedAnSetTimeTag(joinPoint, view);
-                return;
-            }
-
-            // in limit time
-            if (!canClick(lastClickTime, intervalTime)){
-                Log.d(TAG, "is in limit time , return");
-                return;
-            }
-            proceedAnSetTimeTag(joinPoint, view);
-            Log.d(TAG, "view proceed.");
-        } catch (Throwable e) {
-            e.printStackTrace();
+        } catch (Exception e) {
+            //出现异常不拦截点击事件
             joinPoint.proceed();
         }
     }
 
-    public void proceedAnSetTimeTag(ProceedingJoinPoint joinPoint, View view) throws Throwable {
-        view.setTag(R.id.single_click_tag, System.currentTimeMillis());
-        joinPoint.proceed();
-    }
-
-
-    /**
-     * 获取 view 参数
-     *
-     * @param args
-     * @return
-     */
-    public View getViewFromArgs(Object[] args) {
-        if (args != null && args.length > 0) {
-            Object arg = args[0];
-            if (arg instanceof View) {
-                return (View) arg;
+    public View findViewInMethodArgs(Object[] args) {
+        if (args == null || args.length == 0) {
+            return null;
+        }
+        for (int i = 0; i < args.length; i++) {
+            if (args[i] instanceof View) {
+                View view = (View) args[i];
+                if (view.getId() != View.NO_ID) {
+                    return view;
+                }
             }
         }
         return null;
     }
 
-    /**
-     * 判断是否达到可以点击的时间间隔
-     *
-     * @param lastClickTime
-     * @return
-     */
-    public boolean canClick(long lastClickTime, int intervalTime) {
-        long currentTime = System.currentTimeMillis();
-        long realIntervalTime  = currentTime - lastClickTime;
-        Log.d(TAG, "canClick currentTime= " + currentTime + " lastClickTime= " + lastClickTime + " realIntervalTime= " + realIntervalTime);
-        return realIntervalTime >= intervalTime;
+    public boolean canClick(int interval) {
+        long l = System.currentTimeMillis() - mLastClickTime;
+        if (l > interval) {
+            mLastClickTime = System.currentTimeMillis();
+            return true;
+        }
+        return false;
     }
 }
