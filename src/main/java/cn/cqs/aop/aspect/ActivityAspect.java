@@ -209,14 +209,18 @@ public class ActivityAspect {
         joinPoint.proceed();
         log(joinPoint,startTimeMillis);
         Activity activity = (Activity) joinPoint.getTarget();
-        if (activity != null && getActivityStackSize() > 1){
-            if (exitAnimation != null && exitAnimation.length > 1){
-                activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
-            } else {
-                int[] exitAnim = getDefaultExitAnimation();
-                if (exitAnim != null && exitAnim.length>1) {
-                    activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+        if (activity != null){
+            if (getActivityStackSize() > 1){
+                if (exitAnimation != null && exitAnimation.length > 1){
+                    activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
+                } else {
+                    int[] exitAnim = getDefaultExitAnimation();
+                    if (exitAnim != null && exitAnim.length > 1) {
+                        activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+                    }
                 }
+            } else {
+                activity.overridePendingTransition(0,0);
             }
         }
     }
@@ -232,14 +236,18 @@ public class ActivityAspect {
         log(joinPoint,startTimeMillis);
         //在Finish后插入退出动画,当前栈若只有一个Activity默认去掉之前的动画直接退出应用
         Activity activity = (Activity) joinPoint.getTarget();
-        if (activity != null && getActivityStackSize() > 1){
-            if (exitAnimation != null && exitAnimation.length > 1){
-                activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
-            } else {
-                int[] exitAnim = getDefaultExitAnimation();
-                if (exitAnim != null && exitAnim.length>1) {
-                    activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+        if (activity != null){
+            if (getActivityStackSize() > 1){
+                if (exitAnimation != null && exitAnimation.length > 1){
+                    activity.overridePendingTransition(exitAnimation[0],exitAnimation[1]);
+                } else {
+                    int[] exitAnim = getDefaultExitAnimation();
+                    if (exitAnim != null && exitAnim.length>1) {
+                        activity.overridePendingTransition(exitAnim[0],exitAnim[1]);
+                    }
                 }
+            } else {
+                activity.overridePendingTransition(0,0);
             }
         }
     }
